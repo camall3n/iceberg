@@ -19,4 +19,5 @@ coverage.xml
 *.svg
 *.png
 *.gif
+venv/
 
