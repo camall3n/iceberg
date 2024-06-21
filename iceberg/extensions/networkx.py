@@ -1,5 +1,5 @@
 import math
-from typing import List, Tuple, Union
+from typing import List, Tuple, Union, Callable
 
 import iceberg as ice
 import networkx as nx
@@ -108,12 +108,23 @@ class NetworkXGraph(ice.DrawableWithChild):
     graph: nx.Graph
     radius: float = 32
     scale: Union[float, str] = 'auto'
-    layout: str = 'circular_layout'
+    layout: Union[str, Callable] = 'circular_layout'
     fill_color: ice.Color = ice.Colors.WHITE
     edge_color: ice.Color = ice.Colors.BLACK
 
     def setup(self):
-        layout_fn = getattr(nx.drawing.layout, self.layout)
+        if isinstance(self.layout, str):
+            if self.layout not in nx.drawing.layout.__all__:
+                raise ValueError(
+                    f"Unknown layout: '{self.layout}'\n"
+                    f"Options include: [\n    \'"
+                    f"{'\'\n    \''.join(nx.drawing.layout.__all__)}"
+                    f"\'\n]"
+                )
+            layout_fn = getattr(nx.drawing.layout, self.layout)
+        else:
+            layout_fn = self.layout
+
         nodelist = list(self.graph.nodes())
         if self.scale == 'auto':
             self.scale = self.radius * len(nodelist)
