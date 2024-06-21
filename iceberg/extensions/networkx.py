@@ -1,7 +1,5 @@
-import collections
-import itertools
 import math
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 import iceberg as ice
 import networkx as nx
@@ -34,13 +32,14 @@ def truncate_arc(path: List[Tuple[float]], truncation: float) -> List[Tuple[floa
 
     return (new_a, b, c, new_d)
 
-def arc_path(posA: Tuple[float], posB: Tuple[float], rad: float = 0.) -> List[Tuple[float]]:
+
+def arc_path(posA: Tuple[float], posB: Tuple[float], bend: float = 0.5, angularity: float = 0.5) -> List[Tuple[float]]:
     """
     Creates a simple quadratic Bézier curve between two
     points. The curve is created so that the middle control point
     (C1) is located at the same distance from the start (C0) and
     end points(C2) and the distance of the C1 to the line
-    connecting C0-C2 is *rad* times the distance of C0-C2.
+    connecting C0-C2 is *bend* times the distance of C0-C2.
 
     Parameters
     ----------
@@ -48,19 +47,23 @@ def arc_path(posA: Tuple[float], posB: Tuple[float], rad: float = 0.) -> List[Tu
       Start position
     posB : Tuple[float]
       End position
-    rad : float
-      Curvature of the curve, where rad=0 is a straight line between the
-      points, and rad=1 is a curve whose width is equal to the straight-
-      line distance between its endpoints.
+    bend : float
+      Curvature of the curve, where bend=0 is a straight line between the
+      points, and bend=1 is a curve whose width is equal to the straight-
+      line distance between its endpoints when angularity = 1.
+    angularity : float
+      Controls the angularity of the arc by moving the control points
+      closer or farther from the endpoints. When angularity = 1 there is
+      no smoothing or sharpening. Higher values will produce sharper
+      curves; lower values will produce smoother curves. When angularity
+      is zero, the curve is a straight line.
     """
     x1, y1 = posA
     x2, y2 = posB
-    x12, y12 = (x1 + x2) / 2., (y1 + y2) / 2.
-    dx, dy = x2 - x1, y2 - y1
 
-    f = rad
-
-    cx, cy = x12 + f * dy, y12 - f * dx
+    x12, y12 = (x1 + x2) / 2., (y1 + y2) / 2.  # midpoint
+    dx, dy = x2 - x1, y2 - y1  # straight-line distance
+    cx, cy = x12 + bend * dy, y12 - bend * dx  # control point ray intersection
 
     # move control points halfway towards endpoints for smoothness
     a, b, c, d = [
@@ -72,7 +75,7 @@ def arc_path(posA: Tuple[float], posB: Tuple[float], rad: float = 0.) -> List[Tu
     ab_x = b[0] - a[0]
     ab_y = b[1] - a[1]
     length = math.sqrt(ab_x**2 + ab_y**2)
-    b, a, d, c = truncate_arc([b, a, d, c], length/2)
+    b, a, d, c = truncate_arc([b, a, d, c], length * (1-angularity))
 
     vertices = [a, b, c, d]
     return vertices
@@ -103,16 +106,21 @@ class Node(ice.DrawableWithChild):
 
 class NetworkXGraph(ice.DrawableWithChild):
     graph: nx.Graph
-    pos: Tuple[float]
     radius: float = 32
+    scale: Union[float, str] = 'auto'
+    layout: str = 'circular_layout'
     fill_color: ice.Color = ice.Colors.WHITE
     edge_color: ice.Color = ice.Colors.BLACK
 
     def setup(self):
+        layout_fn = getattr(nx.drawing.layout, self.layout)
         nodelist = list(self.graph.nodes())
+        if self.scale == 'auto':
+            self.scale = self.radius * len(nodelist)
+        pos = layout_fn(self.graph, scale=self.scale)
         nodes = []
         for name in nodelist:
-            node = Node(radius=self.radius, center=self.pos[name], text=name)
+            node = Node(radius=self.radius, center=pos[name], text=name)
             nodes.append(node)
 
         edgelist = list(self.graph.edges)
@@ -140,6 +148,7 @@ class NetworkXGraph(ice.DrawableWithChild):
                 font_style=ice.FontStyle('Arial', color=ice.Colors.BLACK),
                 align=ice.primitives.text.Text.Align.CENTER,
             )
+
             # Compute a nice position for the text, near the ending control point
             w, h = text.bounds.size
             text_pos = path[-2][0] - w/2, path[-2][1] - h/2
@@ -151,66 +160,3 @@ class NetworkXGraph(ice.DrawableWithChild):
         composition = ice.Compose(nodes + edges)
 
         self.set_child(composition)
-
-
-G = nx.DiGraph()
-G.add_edge(1, 3, weight=3)
-G.add_edge(3, 4, weight=4)
-G.add_edge(2, 5, weight=2)
-G.add_edge(1, 2, weight=4)
-G.add_edge(2, 1, weight=2)
-G.add_edge(1, 4, weight=1)
-G.add_edge(2, 3, weight=1)
-G.add_edge(5, 6, weight=1)
-G.add_edge(6, 4, weight=1)
-pos = nx.circular_layout(G, scale=200)
-ice.Compose(NetworkXGraph(graph=G, pos=pos)).pad(10)
-
-
-#%% Built-in NetworkX draw
-options = {
-    "font_size": 12,
-    "node_size": 1000,
-    "node_color": "white",
-    "edgecolors": "black",
-    "linewidths": 1,
-    "width": 1,
-}
-nx.draw_networkx(G, pos=pos, **options)
-
-#%% Draw function adapted from NetworkX docs
-# https://networkx.org/documentation/latest/auto_examples/drawing/plot_multigraphs.html#sphx-glr-auto-examples-drawing-plot-multigraphs-py
-
-def draw_labeled_multigraph(G, attr_name, ax=None):
-    """
-    Length of connectionstyle must be at least that of a maximum number of edges
-    between pair of nodes. This number is maximum one-sided connections
-    for directed graph and maximum total connections for undirected graph.
-    """
-    # Works with arc3 and angle3 connectionstyles
-    connectionstyle = [f"arc3,rad={r}" for r in [0.15, 0.3, 0.45, 0.6]]
-    # connectionstyle = [f"angle3,angleA={r}" for r in it.accumulate([30] * 4)]
-
-    pos = nx.circular_layout(G)
-    nx.draw_networkx_nodes(G, pos, node_color="white", edgecolors="black", ax=ax)
-    nx.draw_networkx_labels(G, pos, font_size=12, ax=ax)
-    nx.draw_networkx_edges(
-        G, pos, edge_color="black", connectionstyle=connectionstyle, ax=ax
-    )
-
-    labels = {
-        tuple(edge): f"{attrs[attr_name]}"
-        for *edge, attrs in G.edges(data=True)
-    }
-    nx.draw_networkx_edge_labels(
-        G,
-        pos,
-        labels,
-        connectionstyle=connectionstyle,
-        label_pos=0.3,
-        font_color="black",
-        bbox={"alpha": 0},
-        ax=ax,
-    )
-
-draw_labeled_multigraph(G, 'weight')
