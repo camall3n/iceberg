@@ -11,8 +11,7 @@ ice.Compose([
     ice.CubicBezier(arc_path((0,0), (100,0), bend=1, angularity=1), color(ice.Colors.BLUE)),
     ice.CubicBezier(arc_path((0,0), (100,0), bend=1, angularity=2), color(ice.Colors.CYAN)),
     ice.CubicBezier(arc_path((0,0), (100,0), bend=0.5, angularity=3), color(ice.Colors.MAGENTA)),
-]).pad(20)
-
+]).pad(20).background(ice.Colors.WHITE).scale(4).render('sandbox/arcs.png')
 #%%
 
 G = nx.DiGraph()
@@ -30,7 +29,6 @@ G.add_edge(6, 3, weight=1)
 G.add_edge(2, 4, weight=1)
 G.add_edge(7, 5, weight=1)
 G.add_edge(8, 9, weight=1)
-pos = nx.circular_layout(G, scale=200)
 ice.Compose(NetworkXGraph(graph=G)).pad(10)
 
 
